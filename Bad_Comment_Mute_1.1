@@ -1,0 +1,476 @@
+// ==UserScript==
+// @name        Bad Comment Mute
+// @namespace        http://tampermonkey.net/
+// @version        1.1
+// @description        コメント欄・リブロク一覧における非表示ブロック機能
+// @author        Ameba Blog User
+// @match        https://ameblo.jp/*
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=ameba.jp
+// @run-at        document-body
+// @noframes
+// @grant        none
+// @updateURL        https://github.com/personwritep/Bad_Comment_Mute/raw/main/Bad_Comment_Mute.user.js
+// @downloadURL        https://github.com/personwritep/Bad_Comment_Mute/raw/main/Bad_Comment_Mute.user.js
+// ==/UserScript==
+
+
+let edit_mode=0;
+let block_filter_id;
+let block_regex_id;
+let comm_block_data=[]; // 総合ブロックデータ
+
+let read_json=localStorage.getItem('comm_id_back'); // ローカルストレージ 保存名
+comm_block_data=JSON.parse(read_json);
+if(comm_block_data==null){
+    comm_block_data=['tmp_id0'];
+    let write_json=JSON.stringify(comm_block_data);
+    localStorage.setItem('comm_id_back', write_json); } // ローカルストレージ 保存
+
+
+reg_set();
+
+function reg_set(){
+    block_filter_id=comm_block_data.join('|');
+    block_regex_id=RegExp(block_filter_id); }
+
+
+disp_environ();
+
+function disp_environ(){
+    let style=
+        '<style id="bc_mute">'+
+        '.bcm_help { cursor: pointer; text-decoration: none; opacity: 1 !important; } '+
+        '.bcm_help:focus { outline: none; } '+
+        '#commentsHeader h4 { position: relative; z-index: 1; padding: 3px 6px 0; } '+
+        '#commentsHeader h4 .bcm_svg { vertical-align: -7px; margin: 0 10px; }'+
+        '.commentArea h1 { position: relative; z-index: 1; padding: 3px 6px 1px; } '+
+        '.commentArea h1 .bcm_svg { vertical-align: -7px; margin: 0 10px; }'+
+        '#comment_module h3 { padding: 7px 6px 6px !important; } '+
+        '#comment_module h3 .bcm_svg { vertical-align: -6px; margin: 0 10px; }'+
+        '#indexPagination { position: relative; } '+
+        '[aria-label="PcEntryReblogList"] { '+
+        'font-size: 16px !important; width: 820px !important; } '+
+        '.modal-header { background: #cfd8dc; } '+
+        '.modal-heading { padding: 10px 12px 8px; color: #000; } '+
+        '.modal-heading__number span { color: red; } '+
+        '.modal-body { max-height: 75vh; } '+
+        '.modal-list__item { font-size: 16px; background: #f4f4f4; } '+
+        '.modal-list__item:hover { background-color: #fff; cursor: auto; } '+
+        '.modal-list__link { pointer-events: none; } '+
+        '.modal-entry { color: #1565C0; text-decoration: none; } '+
+        '.modal-entry__title { font-size: 16px; margin-bottom: 4px; pointer-events: auto; } '+
+        '.modal-entry__text { '+
+        'color: #000; -webkit-line-clamp: unset; padding: 0 20px 0 40px; } '+
+        '.modal-user-info__sub { padding: 0 20px 0 40px; } '+
+        '.modal-user-info__main { pointer-events: auto; cursor: pointer; padding-top: 3px; } '+
+        '.modal-user-info__main:hover { background: #eceff1; } '+
+        '.modal-user-info__name { color: #000; font-size: 16px !important; }'+
+        '</style>';
+
+    if(!document.querySelector('#bc_mute')){
+        document.body.insertAdjacentHTML('beforeend', style); }}
+
+
+let target=document.body; // 監視 target
+let monitor=new MutationObserver(main);
+monitor.observe(target, {childList: true, subtree: true}); // 監視開始
+
+function main(){
+    comm_blocker();
+    checker();
+    list_opener();
+
+    let Header;
+    let List;
+    let Area;
+    let Area_m;
+
+    if(document.querySelector('#commentsHeader h4')){
+        Header=document.querySelector('#commentsHeader h4');
+        List=document.querySelector('#commentsList');
+        if(List){
+            setting(Header, List, List); }}
+    else if(document.querySelector('.commentArea h1')){
+        Header=document.querySelector('.commentArea h1');
+        List=document.querySelector('#commentListUl');
+        Area=document.querySelector('.commentArea');
+        if(List && Area){
+            setting(Header, List, Area); }}
+    else if(document.querySelector('#comment_module h3')){
+        Header=document.querySelector('#comment_module h3');
+        List=document.querySelector('#comment_module');
+        Area=document.querySelector('#sub_main');
+        Area_m=document.querySelector('#main');
+        if(List && Area && Area_m){
+            setting_r(Header, List, Area, Area_m); }}
+
+
+    function setting(Header, List, Area){
+        add_help(Header);
+        Header.onclick=function(event){
+            if(event.ctrlKey){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    remove_sw();
+                    Header.style.background='red';
+                    Area.style.overflow='visible';
+                    List.style.boxShadow='0 0 0 200vw rgb(80 120 150 / 0.5)';
+                    comm_blocker(); }
+                else{
+                    edit_mode=0;
+                    Header.style.background='none';
+                    Area.style.overflow='hidden';
+                    List.style.boxShadow='none';
+                    comm_blocker(); }}}}
+
+
+    function setting_r(Header, List, Area, Area_m){
+        add_help(Header);
+        Header.onclick=function(){
+            if(event.ctrlKey){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    remove_sw();
+                    Header.style.background='red';
+                    Area.style.overflow='visible';
+                    Area_m.style.overflow='visible';
+                    List.style.boxShadow='0 0 0 200vw rgb(80 120 150 / 0.5)';
+                    comm_blocker(); }
+                else{
+                    edit_mode=0;
+                    Header.style.background='none';
+                    Area.style.overflow='hidden';
+                    Area_m.style.overflow='hidden';
+                    List.style.boxShadow='none';
+                    comm_blocker(); }}}}
+
+
+    function remove_sw(){
+        if(document.querySelector('#bcm_sw')){
+            document.querySelector('#bcm_sw').remove(); }}
+
+} // main()
+
+
+
+function add_help(Header){
+    let help_url="https://ameblo.jp/personwritep/entry-12804393747.html";
+
+    let help=
+        '<a class="bcm_help" href="'+ help_url +'" target="_blank" rel="noopener">'+
+        '<svg class="bcm_svg" height="22" width="22" viewBox="0 10 240 240">'+
+        '<path d="M39 6C24 9 11 18 8 33C4 48 6 65 6 8'+
+        '0L6 169C6 186 3 206 14 220C26 236 46 234 64 234L156 234C172 234 189 236 '+
+        '205 233C221 230 231 217 234 202C236 188 234 172 234 158L234 71C234 54 23'+
+        '7 33 226 19C213 4 193 6 175 6L85 6C70 6 54 4 39 6z"></path>'+
+        '<path style="fill: #fff" d="M44 214C83 214 123 212 161 20'+
+        '2C181 197 201 189 213 171C222 157 223 134 213 119C201 101 173 92 153 102'+
+        'C153 81 147 59 132 43C106 17 58 11 36 45C27 58 25 75 24 90C21 122 28 156'+
+        ' 36 187C38 196 42 205 44 214z"></path>'+
+        '<path d="M111 85L111 198C118 198 124 196 131'+
+        ' 195L131 188C139 190 147 192 155 190C169 187 180 176 183 162C184 157 184'+
+        ' 151 184 146C184 139 184 132 181 125C175 112 160 103 146 109C140 111 136'+
+        ' 115 132 119L132 82C125 82 118 84 111 85M106 170C97 174 92 185 80 184C72'+
+        ' 183 66 177 64 169C62 157 65 139 76 132C87 125 96 133 106 137L106 122C10'+
+        '6 120 106 117 105 115C103 112 95 112 92 111C77 110 65 113 54 123C40 136 '+
+        '40 152 40 170C40 197 66 208 89 201C94 199 101 197 104 193C108 189 106 17'+
+        '6 106 170z"></path>'+
+        '<path style="fill: #fff" d="M141 127C138 127 135 129 133 131C131 134 132 '+
+        '138 132 141L132 161C132 165 131 172 133 175C135 178 139 177 142 176C158 '+
+        '172 159 155 158 141C158 132 151 124 141 127z"></path>'+
+        '</svg></a>'+
+        '<span class="bcm_tooltip">外部コメントを全て非表示にします'+
+        '<style>.bcm_tooltip { position: absolute; padding: 2px 6px 0; border: 1px solid #aaa; '+
+        'font: normal 14px/18px Meiryo; color: #000; background: #fff; display: none; } '+
+        '</style></span>';
+
+    monitor.disconnect();
+    if(!document.querySelector('.bcm_help')){
+        Header.insertAdjacentHTML('beforeend', help); }
+    monitor.observe(target, {childList: true, subtree: true});
+
+
+    let bhelp=document.querySelector('.bcm_help');
+    if(bhelp){
+        if(comm_block_data[0]!='tmp_id1'){
+            comm_block_data[0]='tmp_id0';
+            bhelp.style.fill="#1976d2"; }
+        else{
+            bhelp.style.fill="red"; }
+
+        bhelp.onclick=(event)=>{
+            if(event.ctrlKey){
+                event.preventDefault();
+                event.stopImmediatePropagation();
+
+                if(comm_block_data[0]=='tmp_id0'){
+                    comm_block_data[0]='tmp_id1';
+                    bhelp.style.fill="red";
+                    disp_tooltip(); }
+                else{
+                    comm_block_data[0]='tmp_id0';
+                    bhelp.style.fill="#1976d2"; }
+                comm_blocker();
+                let write_json=JSON.stringify(comm_block_data);
+                localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存
+            }}}
+
+
+    function disp_tooltip(){
+        let tooltip=document.querySelector('.bcm_tooltip');
+        if(tooltip){
+            tooltip.style.display='inline';
+            setTimeout(()=>{
+                tooltip.style.display='none';
+            }, 2000); }}
+
+} // add_help()
+
+
+
+function comm_blocker(){
+    let user_id;
+
+    let user_li=document.querySelectorAll('#commentsList li');
+    if(user_li.length!=0){
+        for(let k=0; k<user_li.length; k++){ // コメントリストのマスク
+            let link=user_li[k].querySelector('[data-uranus-component="commentAuthor"] a');
+            if(link){
+                user_id=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                if(comm_block_data[0]=='tmp_id1'){
+                    user_li[k].style.display='none'; }
+                else{
+                    user_li[k].style.display='block'; }
+                user_id='%'+ user_li[k].querySelector(
+                    '[data-uranus-component="commentAuthor"]').textContent; }
+
+            if(block_regex_id.test(user_id)==true){
+                if(edit_mode==0){
+                    user_li[k].style.display='none';
+                    user_li[k].style.outline='none'; }
+                else{
+                    user_li[k].style.display='block';
+                    user_li[k].style.outline='solid 2px red';
+                    user_li[k].style.outlineOffset='-6px'; }}
+            else{
+                if(edit_mode==1){
+                    user_li[k].style.display='block';
+                    user_li[k].style.outline='none'; }}}}
+
+
+    let user_li2=document.querySelectorAll('#commentListUl li');
+    if(user_li2.length!=0){
+        for(let k=0; k<user_li2.length; k++){ // コメントリストのマスク
+            let link=user_li2[k].querySelector('.commentAuthor a');
+            if(link){
+                user_id=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                if(comm_block_data[0]=='tmp_id1'){
+                    user_li2[k].style.display='none'; }
+                else{
+                    user_li2[k].style.display='block'; }
+                user_id='%'+ user_li2[k].querySelector('.commentAuthor').textContent; }
+
+            if(block_regex_id.test(user_id)==true){
+                if(edit_mode==0){
+                    user_li2[k].style.display='none';
+                    user_li2[k].style.outline='none'; }
+                else{
+                    user_li2[k].style.display='block';
+                    user_li2[k].style.outline='solid 2px red';
+                    user_li2[k].style.outlineOffset='-6px'; }}
+            else{
+                if(edit_mode==1){
+                    user_li2[k].style.display='block';
+                    user_li2[k].style.outline='none'; }}}}
+
+
+    let user_li3=document.querySelectorAll('.each_comment');
+    if(user_li3.length!=0){
+        for(let k=0; k<user_li3.length; k++){ // コメントリストのマスク
+            let link=user_li3[k].querySelector('.comment_author a');
+            if(link){
+                user_id=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                if(comm_block_data[0]=='tmp_id1'){
+                    user_li3[k].style.display='none'; }
+                else{
+                    user_li3[k].style.display='block'; }
+                user_id='%'+ user_li3[k].querySelector('.comment_author').textContent; }
+
+            if(block_regex_id.test(user_id)==true){
+                if(edit_mode==0){
+                    user_li3[k].style.display='none';
+                    user_li3[k].style.outline='none'; }
+                else{
+                    user_li3[k].style.display='block';
+                    user_li3[k].style.outline='solid 2px red';
+                    user_li3[k].style.outlineOffset='-2px'; }}
+            else{
+                if(edit_mode==1){
+                    user_li3[k].style.display='block';
+                    user_li3[k].style.outline='none'; }}}}
+
+} // comm_blocker()
+
+
+
+function checker(){
+    let user_id=[];
+
+    let user_li=document.querySelectorAll('#commentsList li');
+    if(user_li.length!=0){
+        for(let k=0; k<user_li.length; k++){
+            let n=k;
+            let link=user_li[n].querySelector('[data-uranus-component="commentAuthor"] a');
+            if(link){
+                user_id[n]=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                user_id[n]='%'+ user_li[n].querySelector(
+                    '[data-uranus-component="commentAuthor"]').textContent; }
+
+            user_li[n].onclick=function(event){ // リストのクリックで設定
+                if(event.ctrlKey){
+                    local_backup_c(user_li[n], user_id[n]);
+                    local_backup(user_li[n], user_id[n]); }}}}
+
+
+    let user_li2=document.querySelectorAll('#commentListUl li');
+    if(user_li2.length!=0){
+        for(let k=0; k<user_li2.length; k++){
+            let n=k;
+            let link=user_li2[n].querySelector('.commentAuthor a');
+            if(link){
+                user_id[n]=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                user_id[n]='%'+ user_li2[n].querySelector('.commentAuthor').textContent; }
+
+            user_li2[n].onclick=function(event){ // リストのクリックで設定
+                if(event.ctrlKey){
+                    local_backup_c(user_li2[n], user_id[n]);
+                    local_backup(user_li2[n], user_id[n]); }}}}
+
+
+    let user_li3=document.querySelectorAll('.each_comment');
+    if(user_li3.length!=0){
+        for(let k=0; k<user_li3.length; k++){
+            let n=k;
+            let link=user_li3[n].querySelector('.comment_author a');
+            if(link){
+                user_id[n]=link.getAttribute('href').replace(/\//g, ''); }
+            else{
+                user_id[n]='%'+ user_li3[n].querySelector('.comment_author').textContent; }
+
+            user_li3[n].onclick=function(event){ // リストのクリックで設定
+                if(event.ctrlKey){
+                    local_backup_c(user_li3[n], user_id[n]);
+                    local_backup(user_li3[n], user_id[n]); }}}}
+
+
+    function local_backup(comment, user_id){
+        if(edit_mode==1){
+            if(block_regex_id.test(user_id)!=true){
+                comment.style.outline='solid 2px red';
+                comment.style.outlineOffset='-3px';
+                comm_block_data.push(user_id); }
+            else if(block_regex_id.test(user_id)==true){
+                comment.style.outline='none';
+                comm_block_data.splice(comm_block_data.indexOf(user_id), 1); }
+            reg_set();
+            let write_json=JSON.stringify(comm_block_data);
+            localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存
+            comm_blocker(); }}
+
+
+    function local_backup_c(comment, user_id){
+        if(edit_mode==0){
+            if(block_regex_id.test(user_id)!=true){
+                disp_sw(comment, user_id); }}}
+
+
+    function disp_sw(comment, user_id){
+        let sw=
+            '<div id="bcm_sw">排除リストに登録　'+
+            '<span class="bcm_b bcm_do">登録</span> '+
+            '<span class="bcm_b bcm_no">キャンセル</span>'+
+            '<style>'+
+            '#bcm_sw { padding: 6px 8px 4px; width: fit-content; border: 2px solid #1976d2; '+
+            'border-radius: 3px; font: normal 14px Meiryo; color: #333; background: #fff; '+
+            'position: absolute; right: 10px; bottom: 10px; } '+
+            '.bcm_b { padding: 2px 6px 1px; border-radius: 4px; color: #fff; '+
+            'background: #1976d2; cursor: pointer; } '+
+            '.bcm_b:hover { outline: 1px solid #1976d2; } '+
+            '</style></div>';
+
+        if(!document.querySelector('#bcm_sw')){
+            comment.insertAdjacentHTML('beforeend', sw); }
+
+        let bcm_sw=comment.querySelector('#bcm_sw');
+        let bcm_do=comment.querySelector('.bcm_do');
+        let bcm_no=comment.querySelector('.bcm_no');
+        if(bcm_sw && bcm_do && bcm_no){
+            comment.style.outline='solid 2px red';
+            comment.style.outlineOffset='-3px';
+            comment.style.position='relative';
+
+            bcm_no.onclick=()=>{
+                comment.style.outline='none';
+                comment.style.position='';
+                bcm_sw.remove(); }
+
+            bcm_do.onclick=()=>{
+                comm_block_data.push(user_id);
+                reg_set();
+                let write_json=JSON.stringify(comm_block_data);
+                localStorage.setItem('comm_id_back', write_json); // ローカルストレージ保存
+                bcm_sw.remove();
+                comm_blocker(); }} // 表示に反映
+
+    } // disp_sw()
+
+} // checker()
+
+
+
+function list_opener(){
+    let comm_More=
+        document.querySelector('[data-uranus-component="commentsMoreButton"]');
+    if(comm_More){
+        monitor.disconnect();
+        comm_More.click();
+        monitor.observe(target, {childList: true, subtree: true}); }
+
+    let comm_More2=document.querySelector('#commentListMoreLink');
+    if(comm_More2){
+        monitor.disconnect();
+        comm_More2.click();
+        monitor.observe(target, {childList: true, subtree: true}); }}
+
+
+
+
+let monitor0=new MutationObserver(rb_dialog);
+monitor0.observe(target, {childList: true, subtree: true}); // 監視開始
+
+function rb_dialog(){
+    let dialog=document.querySelector('div[aria-label="PcEntryReblogList"]');
+    if(dialog){
+        let more=document.querySelector('.modal-more');
+        if(more){
+            monitor0.disconnect();
+            more.click();
+            monitor0.observe(target, {childList: true, subtree: true}); }
+
+        let modal_list_item=dialog.querySelectorAll('.modal-list__item');
+        if(modal_list_item.length!=0){
+            for(let k=0; k<modal_list_item.length; k++){
+                let page_href=modal_list_item[k].querySelector('.modal-entry').getAttribute('href');
+                let user_id=page_href.split('/')[1];
+                if(block_regex_id.test(user_id)==true){
+                    modal_list_item[k].style.display='none'; }
+                else{
+                    modal_list_item[k].querySelector('.modal-entry').setAttribute('target', '_blank'); }
+            }}}} // rb_dialog()
+
+
