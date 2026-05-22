@@ -1,0 +1,171 @@
+// ==UserScript==
+// @name         Bad Comment Mute
+// @namespace    http://tampermonkey.net/
+// @version      0.3
+// @description  特定ブログのコメント欄から不良な「コメント」を非表示にする
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*
+// @run-at        document-start
+// @grant        none
+// ==/UserScript==
+
+window.addEventListener('DOMContentLoaded', function(){
+    let comm_block_data=[]; // 総合ブロックデータ
+    let block_filter_id;
+    let block_regex_id;
+
+    let edit_mode=0;
+
+    let read_json=localStorage.getItem('comm_id_back'); // ローカルストレージ 保存名
+    comm_block_data=JSON.parse(read_json);
+    if(comm_block_data==null){
+        comm_block_data=['tmp_id'];
+        let write_json=JSON.stringify(comm_block_data);
+        localStorage.setItem('comm_id_back', write_json); } // ローカルストレージ 保存
+
+
+    reg_set();
+
+    function reg_set(){
+        block_filter_id=comm_block_data.join('|');
+        block_regex_id=RegExp(block_filter_id); }
+
+
+    disp_environ();
+
+    function disp_environ(){
+        let css=
+            '#reblogHeader h4, #commentsHeader h4 { padding: 3px 6px 0; } '+
+            '#reblogHeader h4:before, #commentsHeader h4:before { content: "🟢 "; } '+
+            '[data-uranus-component="commentsList"].is-collapsed > li { display: list-item; } '+
+            '[data-uranus-component="commentsMore"] { display: none; } '+
+            '[data-uranus-component="pagination"].is-hidden { display: block !important; } '+
+            '._VTWWy72m { font-size: 14px; width: 820px; } '+
+            '._3OVFjjnu { background: #cfd8dc; } '+
+            '._2NO3-cCV { color: #000; } '+
+            '._2y13PkI_ { color: red; } '+
+            '._1H3aORVw { max-height: 75vh; } '+
+            '._t1jBTIo6 { font-size: 14px; background: #f4f4f4; } '+
+            '._t1jBTIo6 .modal-entry { text-decoration: none; } '+
+            '._t1jBTIo6:hover { background-color: #fff; } '+
+            '._t1jBTIo6 ._13k_m6Fs { color: #000; -webkit-line-clamp: unset; } '+
+            '._3rXF4N-X { font-size: 16px; margin-bottom: 2px; } '+
+            '._Rg5EvdMm { font-weight: bold; background: #cfd8dc; } '+
+            '._1Eq2deCX { color: #000; }';
+
+        let style=document.createElement('style');
+        style.setAttribute('id', 'bc_mute');
+        style.innerHTML=css;
+
+        let target=document.querySelector('body');
+        if(!target.querySelector('#bc_mute')){
+            target.appendChild(style); }}
+
+
+
+    let target=document.querySelector('body'); // 監視 target
+    let monitor=new MutationObserver(main);
+    monitor.observe(target, {childList: true, subtree: true}); // 監視開始
+
+    function main(){
+        comm_blocker();
+
+        let commHeader=document.querySelector('#commentsHeader h4');
+        if(commHeader){
+            let commentsList=document.querySelector('#commentsList');
+            commHeader.onclick=function(){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    commHeader.style.background='red';
+                    if(commentsList){
+                        commentsList.style.overflowX='hidden';
+                        commentsList.style.height='70vh'; }
+                    checker(); }
+                else{
+                    edit_mode=0;
+                    commHeader.style.background='none';
+                    if(commentsList){
+                        commentsList.style.overflowX='visible';
+                        commentsList.style.height='auto'; }}}}
+    } // main()
+
+
+
+    function comm_blocker(){
+        let k;
+        let user_li;
+        let user_href;
+
+        user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length!=0){
+            for(k=0; k<user_li.length; k++){ // コメントリストのマスク
+                if(user_li[k].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href=user_li[k].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href=user_href.replace(/\//g, '');
+                    if(block_regex_id.test(user_href)==true){
+                        if(edit_mode==0){
+                            user_li[k].style.display='none';
+                            user_li[k].style.outline='none'; }
+                        else{
+                            user_li[k].style.display='list-item';
+                            user_li[k].style.outline='solid 2px red';
+                            user_li[k].style.outlineOffset='-3px'; }}
+                    else{
+                        user_li[k].style.display='list-item';
+                        user_li[k].style.outline='none'; }}}}
+    } // comm_blocker()
+
+
+
+    function checker(){
+        let k;
+        let user_li;
+        let user_href=[];
+
+        user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length!=0){
+            for(k=0; k<user_li.length; k++){
+                let n=k;
+                if(user_li[n].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href[n]=user_li[n].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href[n]=user_href[n].replace(/\//g, '');
+                    user_li[n].onclick=function(){ // リストのクリックで設定
+                        local_backup(n); }}}
+
+            function local_backup(n){
+                if(edit_mode==1){
+                    if(block_regex_id.test(user_href[n])!=true){
+                        user_li[n].style.outline='solid 2px red';
+                        user_li[n].style.outlineOffset='-3px';
+                        comm_block_data.push(user_href[n]); }
+                    else if(block_regex_id.test(user_href[n])==true){
+                        user_li[n].style.outline='none';
+                        comm_block_data.splice(comm_block_data.indexOf(user_href[n]), 1); }
+                    reg_set();
+                    let write_json=JSON.stringify(comm_block_data);
+                    localStorage.setItem('comm_id_back', write_json); }}} // ローカルストレージ 保存
+    } // checker()
+
+
+
+    let monitor0=new MutationObserver(rb_dialog);
+    monitor0.observe(target, {childList: true, subtree: true}); // 監視開始
+
+    function rb_dialog(){
+        let dialog=document.querySelector('._VTWWy72m');
+        if(dialog){
+            let more=document.querySelector('._2Sqhjike');
+            if(more){
+                monitor0.disconnect();
+                more.click();
+                monitor0.observe(target, {childList: true, subtree: true}); }
+
+            let modal_list_item=dialog.querySelectorAll('.modal-list__item');
+            if(modal_list_item.length!=0){
+                for(let k=0; k<modal_list_item.length; k++){
+                    let page_href=modal_list_item[k].querySelector('.modal-entry').getAttribute('href');
+                    let user_href=page_href.split('/')[1];
+                    if(block_regex_id.test(user_href)==true){
+                        modal_list_item[k].style.display='none'; }}}}}
+
+})
