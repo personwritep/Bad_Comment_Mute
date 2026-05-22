@@ -1,0 +1,349 @@
+// ==UserScript==
+// @name         Bad Comment Mute
+// @namespace    http://tampermonkey.net/
+// @version      0.7
+// @description  コメント欄・リブロク一覧における非表示ブロック機能
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*
+// @run-at        document-body
+// @noframes
+// @grant        none
+// ==/UserScript==
+
+
+let edit_mode=0;
+let block_filter_id;
+let block_regex_id;
+let comm_block_data=[]; // 総合ブロックデータ
+
+let read_json=localStorage.getItem('comm_id_back'); // ローカルストレージ 保存名
+comm_block_data=JSON.parse(read_json);
+if(comm_block_data==null){
+    comm_block_data=['tmp_id'];
+    let write_json=JSON.stringify(comm_block_data);
+    localStorage.setItem('comm_id_back', write_json); } // ローカルストレージ 保存
+
+
+reg_set();
+
+function reg_set(){
+    block_filter_id=comm_block_data.join('|');
+    block_regex_id=RegExp(block_filter_id); }
+
+
+disp_environ();
+
+function disp_environ(){
+    let style=
+        '<style id="bc_mute">'+
+        '.bcm_help { cursor: pointer; text-decoration: none; } '+
+        '.bcm_help:focus { outline: none; } '+
+        '#commentsHeader h4 { position: relative; z-index: 1; padding: 3px 6px 1px; } '+
+        '#commentsHeader h4 .bcm_svg { vertical-align: -7px; margin: 0 10px; }'+
+        '.commentArea h1 { position: relative; z-index: 1; padding: 3px 6px 1px; } '+
+        '.commentArea h1 .bcm_svg { vertical-align: -8px; margin: 0 10px; }'+
+        '#comment_module h3 { padding: 7px 6px 6px !important; } '+
+        '#comment_module h3 .bcm_svg { vertical-align: -7px; margin: 0 10px; }'+
+        '#indexPagination { position: relative; } '+
+        '[aria-label="PcEntryReblogList"] { '+
+        'font-size: 16px !important; width: 820px !important; } '+
+        '.modal-header { background: #cfd8dc; } '+
+        '.modal-heading { padding: 10px 12px 8px; color: #000; } '+
+        '.modal-heading__number span { color: red; } '+
+        '.modal-body { max-height: 75vh; } '+
+        '.modal-list__item { font-size: 16px; background: #f4f4f4; } '+
+        '.modal-list__item:hover { background-color: #fff; cursor: auto; } '+
+        '.modal-list__link { pointer-events: none; } '+
+        '.modal-entry { color: #1565C0; text-decoration: none; } '+
+        '.modal-entry__title { font-size: 16px; margin-bottom: 4px; pointer-events: auto; } '+
+        '.modal-entry__text { '+
+        'color: #000; -webkit-line-clamp: unset; padding: 0 20px 0 40px; } '+
+        '.modal-user-info__sub { padding: 0 20px 0 40px; } '+
+        '.modal-user-info__main { pointer-events: auto; cursor: pointer; padding-top: 3px; } '+
+        '.modal-user-info__main:hover { background: #eceff1; } '+
+        '.modal-user-info__name { color: #000; font-size: 16px !important; }'+
+        '</style>';
+
+    if(!document.querySelector('#bc_mute')){
+        document.body.insertAdjacentHTML('beforeend', style); }}
+
+
+let target=document.body; // 監視 target
+let monitor=new MutationObserver(main);
+monitor.observe(target, {childList: true, subtree: true}); // 監視開始
+
+function main(){
+    comm_blocker();
+    checker();
+    list_opener();
+
+    let Header;
+    let List;
+    let Area;
+    let Area_m;
+
+    if(document.querySelector('#commentsHeader h4')){
+        Header=document.querySelector('#commentsHeader h4');
+        List=document.querySelector('#commentsList');
+        if(List){
+            setting(Header, List, List); }}
+    else if(document.querySelector('.commentArea h1')){
+        Header=document.querySelector('.commentArea h1');
+        List=document.querySelector('#commentListUl');
+        Area=document.querySelector('.commentArea');
+        if(List && Area){
+            setting(Header, List, Area); }}
+    else if(document.querySelector('#comment_module h3')){
+        Header=document.querySelector('#comment_module h3');
+        List=document.querySelector('#comment_module');
+        Area=document.querySelector('#sub_main');
+        Area_m=document.querySelector('#main');
+        if(List && Area && Area_m){
+            setting_r(Header, List, Area, Area_m); }}
+
+
+    function setting(Header, List, Area){
+        add_help(Header);
+        Header.onclick=function(event){
+            if(event.ctrlKey){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    Header.style.background='red';
+                    Area.style.overflow='visible';
+                    List.style.boxShadow='0 0 0 200vw rgb(80 120 150 / 0.5)';
+                    comm_blocker(); }
+                else{
+                    edit_mode=0;
+                    Header.style.background='none';
+                    Area.style.overflow='hidden';
+                    List.style.boxShadow='none';
+                    comm_blocker(); }}}}
+
+
+    function setting_r(Header, List, Area, Area_m){
+        add_help(Header);
+        Header.onclick=function(){
+            if(event.ctrlKey){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    Header.style.background='red';
+                    Area.style.overflow='visible';
+                    Area_m.style.overflow='visible';
+                    List.style.boxShadow='0 0 0 200vw rgb(80 120 150 / 0.5)';
+                    comm_blocker(); }
+                else{
+                    edit_mode=0;
+                    Header.style.background='none';
+                    Area.style.overflow='hidden';
+                    Area_m.style.overflow='hidden';
+                    List.style.boxShadow='none';
+                    comm_blocker(); }}}}
+
+} // main()
+
+
+
+function add_help(Header){
+    let help_url="https://ameblo.jp/personwritep/entry-12804393747.html";
+
+    let help=
+        '<a class="bcm_help" href="'+ help_url +'" target="_blank" rel="noopener">'+
+        '<svg class="bcm_svg" height="24" width="24" viewBox="0 0 210 220">'+
+        '<path d="M89 22C71 25 54 33 41 46C7 81 11 142 50 171C58 177 68 182 78 '+
+        '185C90 188 103 189 115 187C126 185 137 181 146 175C155 169 163 162 '+
+        '169 153C190 123 189 80 166 52C147 30 118 18 89 22z" style="fill: #00ACC1;">'+
+        '</path>'+
+        '<path d="M67 77C73 75 78 72 84 70C94 66 114 67 109 83C106 91 98 95 93 '+
+        '101C86 109 83 116 83 126L111 126C112 114 122 108 129 100C137 90 141 76 '+
+        '135 64C127 45 101 45 84 48C80 49 71 50 68 54C67 56 67 59 67 61L67 77M'+
+        '85 143L85 166L110 166L110 143L85 143z" style="fill:#fff;">'+
+        '</path></svg></a>';
+
+    monitor.disconnect();
+    if(!document.querySelector('.bcm_help')){
+        Header.insertAdjacentHTML('beforeend', help); }
+    monitor.observe(target, {childList: true, subtree: true}); }
+
+
+
+function comm_blocker(){
+    let user_href;
+
+    let user_li=document.querySelectorAll('#commentsList li');
+    if(user_li.length!=0){
+        for(let k=0; k<user_li.length; k++){ // コメントリストのマスク
+            let link=user_li[k].querySelector('[data-uranus-component="commentAuthor"] a');
+            if(link){
+                user_href=link.getAttribute('href').replace(/\//g, '');
+                if(block_regex_id.test(user_href)==true){
+                    if(edit_mode==0){
+                        user_li[k].style.display='none';
+                        user_li[k].style.outline='none'; }
+                    else{
+                        user_li[k].style.display='block';
+                        user_li[k].style.outline='solid 2px red';
+                        user_li[k].style.outlineOffset='-6px'; }}
+                else{
+                    user_li[k].style.display='block';
+                    user_li[k].style.outline='none'; }}}}
+
+
+    let user_li2=document.querySelectorAll('#commentListUl li');
+    if(user_li2.length!=0){
+        for(let k=0; k<user_li2.length; k++){ // コメントリストのマスク
+            let link=user_li2[k].querySelector('.commentAuthor a');
+            if(link){
+                user_href=link.getAttribute('href').replace(/\//g, '');
+                if(block_regex_id.test(user_href)==true){
+                    if(edit_mode==0){
+                        user_li2[k].style.display='none';
+                        user_li2[k].style.outline='none'; }
+                    else{
+                        user_li2[k].style.display='block';
+                        user_li2[k].style.outline='solid 2px red';
+                        user_li2[k].style.outlineOffset='-6px'; }}
+                else{
+                    user_li2[k].style.display='block';
+                    user_li2[k].style.outline='none'; }}}}
+
+
+    let user_li3=document.querySelectorAll('.each_comment');
+    if(user_li3.length!=0){
+        for(let k=0; k<user_li3.length; k++){ // コメントリストのマスク
+            let link=user_li3[k].querySelector('.comment_author a');
+            if(link){
+                user_href=link.getAttribute('href').replace(/\//g, '');
+                if(block_regex_id.test(user_href)==true){
+                    if(edit_mode==0){
+                        user_li3[k].style.display='none';
+                        user_li3[k].style.outline='none'; }
+                    else{
+                        user_li3[k].style.display='block';
+                        user_li3[k].style.outline='solid 2px red';
+                        user_li3[k].style.outlineOffset='-2px'; }}
+                else{
+                    user_li3[k].style.display='block';
+                    user_li3[k].style.outline='none'; }}}}
+
+} // comm_blocker()
+
+
+
+function checker(){
+    let user_href=[];
+
+    let user_li=document.querySelectorAll('#commentsList li');
+    if(user_li.length!=0){
+        for(let k=0; k<user_li.length; k++){
+            let n=k;
+            let link=user_li[n].querySelector('[data-uranus-component="commentAuthor"] a');
+            if(link){
+                user_href[n]=link.getAttribute('href').replace(/\//g, '');
+                user_li[n].onclick=function(event){ // リストのクリックで設定
+                    if(event.ctrlKey){
+                        local_backup_c(user_li[n], user_href[n]);
+                        local_backup(user_li[n], user_href[n]); }}}}}
+
+
+    let user_li2=document.querySelectorAll('#commentListUl li');
+    if(user_li2.length!=0){
+        for(let k=0; k<user_li2.length; k++){
+            let n=k;
+            let link=user_li2[n].querySelector('.commentAuthor a');
+            if(link){
+                user_href[n]=link.getAttribute('href').replace(/\//g, '');
+                user_li2[n].onclick=function(event){ // リストのクリックで設定
+                    if(event.ctrlKey){
+                        local_backup_c(user_li2[n], user_href[n]);
+                        local_backup(user_li2[n], user_href[n]); }}}}}
+
+
+    let user_li3=document.querySelectorAll('.each_comment');
+    if(user_li3.length!=0){
+        for(let k=0; k<user_li3.length; k++){
+            let n=k;
+            let link=user_li3[n].querySelector('.comment_author a');
+            if(link){
+                user_href[n]=link.getAttribute('href').replace(/\//g, '');
+                user_li3[n].onclick=function(event){ // リストのクリックで設定
+                    if(event.ctrlKey){
+                        local_backup_c(user_li3[n], user_href[n]);
+                        local_backup(user_li3[n], user_href[n]); }}}}}
+
+
+    function local_backup(comment, user_id){
+        if(edit_mode==1){
+            if(block_regex_id.test(user_id)!=true){
+                comment.style.outline='solid 2px red';
+                comment.style.outlineOffset='-3px';
+                comm_block_data.push(user_id); }
+            else if(block_regex_id.test(user_id)==true){
+                comment.style.outline='none';
+                comm_block_data.splice(comm_block_data.indexOf(user_id), 1); }
+            reg_set();
+            let write_json=JSON.stringify(comm_block_data);
+            localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存
+            comm_blocker(); }}
+
+
+    function local_backup_c(comment, user_id){
+        if(edit_mode==0){
+            if(block_regex_id.test(user_id)!=true){
+                comment.style.outline='solid 2px red';
+                comment.style.outlineOffset='-3px';
+
+                setTimeout(()=>{
+                    let ok=confirm(" ⛔　排除リストに登録しますか？");
+                    if(ok){
+                        comm_block_data.push(user_id);
+                        reg_set();
+                        let write_json=JSON.stringify(comm_block_data);
+                        localStorage.setItem('comm_id_back', write_json); // ローカルストレージ保存
+                        comm_blocker(); } // 表示に反映
+                    else{
+                        comment.style.outline='none'; }
+                }, 40); }}}
+
+} // checker()
+
+
+
+function list_opener(){
+    let comm_More=
+        document.querySelector('[data-uranus-component="commentsMoreButton"]');
+    if(comm_More){
+        monitor.disconnect();
+        comm_More.click();
+        monitor.observe(target, {childList: true, subtree: true}); }
+
+    let comm_More2=document.querySelector('#commentListMoreLink');
+    if(comm_More2){
+        monitor.disconnect();
+        comm_More2.click();
+        monitor.observe(target, {childList: true, subtree: true}); }}
+
+
+
+
+let monitor0=new MutationObserver(rb_dialog);
+monitor0.observe(target, {childList: true, subtree: true}); // 監視開始
+
+function rb_dialog(){
+    let dialog=document.querySelector('div[aria-label="PcEntryReblogList"]');
+    if(dialog){
+        let more=document.querySelector('.modal-more');
+        if(more){
+            monitor0.disconnect();
+            more.click();
+            monitor0.observe(target, {childList: true, subtree: true}); }
+
+        let modal_list_item=dialog.querySelectorAll('.modal-list__item');
+        if(modal_list_item.length!=0){
+            for(let k=0; k<modal_list_item.length; k++){
+                let page_href=modal_list_item[k].querySelector('.modal-entry').getAttribute('href');
+                let user_href=page_href.split('/')[1];
+                if(block_regex_id.test(user_href)==true){
+                    modal_list_item[k].style.display='none'; }
+                else{
+                    modal_list_item[k].querySelector('.modal-entry').setAttribute('target', '_blank'); }
+            }}}} // rb_dialog()
