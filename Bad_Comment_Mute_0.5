@@ -1,0 +1,233 @@
+// ==UserScript==
+// @name         Bad Comment Mute
+// @namespace    http://tampermonkey.net/
+// @version      0.5
+// @description  コメント欄・リブロク一覧における非表示ブロック機能
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*
+// @noframes
+// @run-at        document-start
+// @grant        none
+// ==/UserScript==
+
+window.addEventListener('DOMContentLoaded', function(){
+    let comm_block_data=[]; // 総合ブロックデータ
+    let block_filter_id;
+    let block_regex_id;
+
+    let edit_mode=0;
+
+    let read_json=localStorage.getItem('comm_id_back'); // ローカルストレージ 保存名
+    comm_block_data=JSON.parse(read_json);
+    if(comm_block_data==null){
+        comm_block_data=['tmp_id'];
+        let write_json=JSON.stringify(comm_block_data);
+        localStorage.setItem('comm_id_back', write_json); } // ローカルストレージ 保存
+
+
+    reg_set();
+
+    function reg_set(){
+        block_filter_id=comm_block_data.join('|');
+        block_regex_id=RegExp(block_filter_id); }
+
+
+    disp_environ();
+
+    function disp_environ(){
+        let css=
+            '#reblogHeader h4, #commentsHeader h4 '+
+            '{ position: relative; z-index: 1; padding: 3px 6px 0; } '+
+            '#reblogHeader h4:before, #commentsHeader h4:before { content: "🟢 "; } '+
+            '#indexPagination { position: relative; } '+
+            '[aria-label="PcEntryReblogList"] { font-size: 16px !important; width: 820px !important; } '+
+            '.modal-header { background: #cfd8dc; } '+
+            '.modal-heading { padding: 10px 12px 8px; color: #000; } '+
+            '.s-reblog.modal-heading__icon { color: #000; font-size: 28px !important; '+
+            'vertical-align: -8px !important; margin: -4px; } '+
+            '.modal-heading__number span { color: red; } '+
+            '.modal-body { max-height: 75vh; } '+
+            '.modal-list__item { font-size: 16px; background: #f4f4f4; }'+
+            '.modal-list__item:hover { background-color: #fff; cursor: auto; } '+
+            '.modal-list__link { pointer-events: none; } '+
+            '.modal-entry { text-decoration: none; } '+
+            '.modal-entry__title { font-size: 16px; margin-bottom: 4px; } '+
+            '.modal-entry__text { color: #000; -webkit-line-clamp: unset; padding: 0 20px 0 40px; } '+
+            '.modal-user-info__sub { padding: 0 20px 0 40px; } '+
+            '.modal-user-info__main { pointer-events: auto; cursor: pointer; padding-top: 3px; }'+
+            '.modal-user-info__main:hover { background: #eceff1; }'+
+            '.modal-user-info__name { color: #000; font-size: 16px !important; } '+
+            '';
+
+        let style=document.createElement('style');
+        style.setAttribute('id', 'bc_mute');
+        style.innerHTML=css;
+
+        let target=document.querySelector('body');
+        if(!target.querySelector('#bc_mute')){
+            target.appendChild(style); }}
+
+
+
+    let target=document.querySelector('body'); // 監視 target
+    let monitor=new MutationObserver(main);
+    monitor.observe(target, {childList: true, subtree: true}); // 監視開始
+
+    function main(){
+        comm_blocker();
+        checker();
+        list_opener();
+        list_pager();
+
+        let commHeader=document.querySelector('#commentsHeader h4');
+        if(commHeader){
+            let commentsList=document.querySelector('#commentsList');
+            commHeader.onclick=function(){
+
+                commHeader.scrollIntoView();
+                scrollBy(0, -105);
+
+                if(edit_mode==0){
+                    edit_mode=1;
+                    commHeader.style.background='red';
+                    commHeader.style.marginRight='-17px';
+                    if(commentsList){
+                        commentsList.style.marginRight='-17px';
+                        commentsList.style.overflowX='hidden';
+                        commentsList.style.height='75vh';
+                        commentsList.style.boxShadow='0 0 0 200vw rgb(80 120 150 / 0.5)'; }
+                    comm_blocker(); }
+                else{
+                    edit_mode=0;
+                    commHeader.style.background='none';
+                    commHeader.style.marginRight='0';
+                    if(commentsList){
+                        commentsList.style.marginRight='0';
+                        commentsList.style.overflowX='visible';
+                        commentsList.style.height='auto';
+                        commentsList.style.boxShadow='none'; }
+                    comm_blocker(); }}}
+    } // main()
+
+
+
+    function comm_blocker(){
+        let user_href;
+
+        let user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length!=0){
+            for(let k=0; k<user_li.length; k++){ // コメントリストのマスク
+                if(user_li[k].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href=user_li[k].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href=user_href.replace(/\//g, '');
+                    if(block_regex_id.test(user_href)==true){
+                        if(edit_mode==0){
+                            user_li[k].style.display='none';
+                            user_li[k].style.outline='none'; }
+                        else{
+                            user_li[k].style.display='list-item';
+                            user_li[k].style.outline='solid 2px red';
+                            user_li[k].style.outlineOffset='-6px'; }}
+                    else{
+                        user_li[k].style.display='list-item';
+                        user_li[k].style.outline='none'; }}}}
+    } // comm_blocker()
+
+
+
+    function list_opener(){
+        let comm_More=document.querySelector('[data-uranus-component="commentsMoreButton"]');
+        if(comm_More){
+            monitor.disconnect();
+            comm_More.click();
+            monitor.observe(target, {childList: true, subtree: true}); }}
+
+
+
+    function list_pager(){
+        let comm_pager=document.querySelectorAll('#indexPagination li');
+        if(comm_pager.length!=0){
+            for(let k=0; k<comm_pager.length; k++){
+                comm_pager[k].addEventListener('click', function(){
+                    setTimeout(()=>{
+                        let commHeader=document.querySelector('#commentsHeader h4');
+                        if(commHeader){
+                            commHeader.scrollIntoView();
+                            scrollBy(0, -105);
+                            checker(); }}, 200); }); }}}
+
+
+
+    function checker(){
+        let user_href=[];
+
+        let user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length!=0){
+            for(let k=0; k<user_li.length; k++){
+                let n=k;
+                if(user_li[n].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href[n]=user_li[n].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href[n]=user_href[n].replace(/\//g, '');
+                    user_li[n].onclick=function(event){ // リストのクリックで設定
+                        if(event.ctrlKey==true){
+                            local_backup_c(n); }
+                        else{
+                            local_backup(n); }}}}
+
+            function local_backup(n){
+                if(edit_mode==1){
+                    if(block_regex_id.test(user_href[n])!=true){
+                        user_li[n].style.outline='solid 2px red';
+                        user_li[n].style.outlineOffset='-3px';
+                        comm_block_data.push(user_href[n]); }
+                    else if(block_regex_id.test(user_href[n])==true){
+                        user_li[n].style.outline='none';
+                        comm_block_data.splice(comm_block_data.indexOf(user_href[n]), 1); }
+                    reg_set();
+                    let write_json=JSON.stringify(comm_block_data);
+                    localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存
+                    comm_blocker(); }}
+
+            function local_backup_c(n){
+                if(edit_mode==0){
+                    if(block_regex_id.test(user_href[n])!=true){
+                        user_li[n].style.outline='solid 2px red';
+                        user_li[n].style.outlineOffset='-3px';
+
+                        setTimeout(()=>{
+                            let ok=confirm(" ⛔　排除リストに登録しますか？");
+                            if(ok){
+                                comm_block_data.push(user_href[n]);
+                                reg_set();
+                                let write_json=JSON.stringify(comm_block_data);
+                                localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存
+                                comm_blocker(); } // 表示に反映
+                            else{
+                                user_li[n].style.outline='none'; }
+                        }, 40); }}}
+
+        }} // checker()
+
+
+
+    let monitor0=new MutationObserver(rb_dialog);
+    monitor0.observe(target, {childList: true, subtree: true}); // 監視開始
+
+    function rb_dialog(){
+        let dialog=document.querySelector('div[aria-label="PcEntryReblogList"]');
+        if(dialog){
+            let more=document.querySelector('.modal-more');
+            if(more){
+                monitor0.disconnect();
+                more.click();
+                monitor0.observe(target, {childList: true, subtree: true}); }
+
+            let modal_list_item=dialog.querySelectorAll('.modal-list__item');
+            if(modal_list_item.length!=0){
+                for(let k=0; k<modal_list_item.length; k++){
+                    let page_href=modal_list_item[k].querySelector('.modal-entry').getAttribute('href');
+                    let user_href=page_href.split('/')[1];
+                    if(block_regex_id.test(user_href)==true){
+                        modal_list_item[k].style.display='none'; }}}}}
+
+})
