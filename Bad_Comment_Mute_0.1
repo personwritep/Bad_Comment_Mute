@@ -1,0 +1,120 @@
+// ==UserScript==
+// @name         Bad Comment Mute
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  特定ブログのコメント欄から不良な「コメント」を非表示にする
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*
+// @grant        none
+// ==/UserScript==
+
+window.addEventListener('load', function(){
+    let comm_block_data=[]; // 総合ブロックデータ
+    let block_filter_id;
+    let block_regex_id;
+
+    let edit_mode=0;
+
+    let read_json=localStorage.getItem('comm_id_back'); // ローカルストレージ 保存名
+    comm_block_data=JSON.parse(read_json);
+    if(comm_block_data==null){
+        comm_block_data=['tmp_id']; }
+    let write_json=JSON.stringify(comm_block_data);
+    localStorage.setItem('comm_id_back', write_json); // ローカルストレージ 保存名
+
+    reg_set();
+
+    function reg_set(){
+        block_filter_id=comm_block_data.join('|');
+        block_regex_id=RegExp(block_filter_id); }
+
+
+
+    let target2=document.querySelector('body'); // 監視 target
+    let monitor2=new MutationObserver(blocker_dia);
+    monitor2.observe(target2, {childList: true, subtree: true}); // 監視開始
+
+    blocker_dia();
+
+    function blocker_dia(){
+        let k;
+        let user_li=[];
+        let user_href=[];
+
+        user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length !=0){
+            for(k=0; k<user_li.length; k++){ // コメントリストのマスク
+                if(user_li[k].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href[k]=user_li[k].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href[k]=user_href[k].replace(/\//g, '');
+                    if(block_regex_id.test(user_href[k])==true){
+                        if(edit_mode==0){
+                            user_li[k].style.display='none';
+                            user_li[k].style.boxShadow='none'; }
+                        else{
+                            user_li[k].style.display='list-item';
+                            user_li[k].style.boxShadow='#fff 0 0 0 1px inset, red 0 0 0 3px inset'; }}
+                    else{
+                        user_li[k].style.display='list-item';
+                        user_li[k].style.boxShadow='none'; }}}}
+
+        let more=document.querySelector('[data-uranus-component="commentsMoreButton"]'); // Moreがある場合は全て呼込む
+        if(more !=null){ more.click(); }}
+
+
+
+    let target0=document.querySelector('body'); // 監視 target
+    let monitor0=new MutationObserver(setter);
+    monitor0.observe(target0, {childList: true, subtree: true, attributes: true}); // 監視開始
+
+    function setter(){
+        let commHeader=document.querySelector('#commentsHeader');
+        if(commHeader){
+            commHeader.onclick=function(){
+                if(edit_mode==0){
+                    edit_mode=1;
+                    commHeader.style.background='red'; }
+                else{
+                    edit_mode=0;
+                    commHeader.style.background='none'; }
+                blocker_dia(); }
+        }}
+
+
+
+    let target3=document.querySelector('body'); // 監視 target
+    let monitor3=new MutationObserver(checker);
+    monitor3.observe(target3, {childList: true, subtree: true, attributes: true}); // 監視開始
+
+    function checker(){
+        let k;
+        let user_li=[];
+        let user_href=[];
+
+
+        user_li=document.querySelectorAll('#commentsList li');
+        if(user_li.length !=0){
+            for(k=0; k<user_li.length; k++){
+                let n=k;
+                if(user_li[n].querySelector('[data-uranus-component="commentAuthor"] a')){
+                    user_href[n]=user_li[n].querySelector('[data-uranus-component="commentAuthor"] a').getAttribute('href');
+                    user_href[n]=user_href[n].replace(/\//g, '');
+                    user_li[n].onclick=function(){ // リストのクリックで設定
+                        local_backup(n); }}}
+
+            function local_backup(n){
+                if(edit_mode==1){
+                    if(block_regex_id.test(user_href[n])!=true){
+                        comm_block_data.push(user_href[n]);
+                        let write_json=JSON.stringify(comm_block_data);
+                        localStorage.setItem('comm_id_back', write_json); }
+
+                    else if(block_regex_id.test(user_href[n])==true){
+                        comm_block_data.splice(comm_block_data.indexOf(user_href[n]), 1);
+                        let write_json=JSON.stringify(comm_block_data);
+                        localStorage.setItem('comm_id_back', write_json); }
+
+                    reg_set();
+                    blocker_dia(); }}}} // checker
+
+})
